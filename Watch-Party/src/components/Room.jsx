@@ -294,11 +294,21 @@ export default function Room() {
             toast.info("Processing invites..."); 
             closeAddFriendModal(); 
 
+            onlineFriendsToInvite.forEach(friendId => {
+                if (socketRef.current) {
+                    socketRef.current.emit('send_room_invite', {
+                        receiverId: friendId,
+                        roomId: currentRoom.roomId,
+                        hostName: currentUser.name
+                    });
+                }
+            });
+
             const token = localStorage.getItem('token');
             const response = await axios.post(`${baseUrl}/api/rooms/invite`, {
                 roomId: currentRoom.roomId,
                 offlineFriendIds: offlineFriendsToInvite,
-                onlineFriendIds: onlineFriendsToInvite
+                onlineFriendIds: onlineFriendsToInvite 
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });

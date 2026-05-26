@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { setUser, logoutUser, setOnlineUsers } from '../redux/userSlice';
 import { setRoom } from '../redux/roomSlice';
@@ -34,6 +34,8 @@ export default function Dashboard({ setIsAuth }) {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
+    const [searchParams, setSearchParams] = useSearchParams();
+
     const navigate = useNavigate();
     const dropdownRef = useRef(null);
     const dispatch = useDispatch();
@@ -48,6 +50,27 @@ export default function Dashboard({ setIsAuth }) {
         ? new Date(currentUser.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
         : 'Recently';
 
+    // Moved this up so the Socket Hook can use it for the Toast button
+    const joinRoomByCode = async (code) => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post(`${baseUrl}/api/rooms/join`, {
+                roomId: code
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.data.success) {
+                dispatch(setRoom(response.data.room));
+                toast.dismiss(); // Closes any lingering invite toasts
+                toast.success("Joined room successfully!");
+                navigate(`/room/${response.data.room._id}`);
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Room does not exist");
+        }
+    };
+
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -58,14 +81,59 @@ export default function Dashboard({ setIsAuth }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // --- UPDATED: LOCAL STORAGE AUTH BRIDGE ---
+    useEffect(() => {
+        let inviteCode = searchParams.get('invite');
+        
+        if (!inviteCode) {
+            inviteCode = localStorage.getItem('pendingInvite');
+        }
+
+        if (inviteCode) {
+            setJoinRoomId(inviteCode.toUpperCase());
+            setActiveModal('join-room');
+            searchParams.delete('invite');
+            setSearchParams(searchParams);
+            localStorage.removeItem('pendingInvite');
+        }
+    }, [searchParams, setSearchParams]);
+
+    // --- UPDATED: PREMIUM TOAST UI & PERSISTENCE ---
     useEffect(() => {
         if (!currentUser) return;
-        
         const socket = io(baseUrl);
-        socket.emit('register_user', currentUser._id);
         
-        socket.on('online_users', (users) => {
-            dispatch(setOnlineUsers(users));
+        socket.emit('register_user', currentUser._id);
+        socket.on('online_users', (users) => dispatch(setOnlineUsers(users)));
+
+        socket.on('receive_room_invite', (data) => {
+            toast(
+                <div className="flex flex-col p-1">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarGradient(data.hostName)} flex items-center justify-center text-white font-bold text-[1.1rem] shadow-inner shrink-0`}>
+                            {data.hostName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col overflow-hidden">
+                            <span className="text-white font-bold text-[1rem] truncate">{data.hostName}</span>
+                            <span className="text-[#aaa] text-[0.8rem] truncate">invited you to a Watch Party</span>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => joinRoomByCode(data.roomId)}
+                        className="w-full bg-accent text-white py-2.5 rounded-lg text-[0.9rem] font-bold hover:bg-accentHover transition-colors border-none cursor-pointer shadow-[0_0_15px_rgba(255,92,0,0.2)]"
+                    >
+                        Join Room {data.roomId}
+                    </button>
+                </div>, 
+                { 
+                    position: "top-right", 
+                    autoClose: false, // Disables the disappearing timer completely
+                    closeOnClick: false, // Prevents accidental closing if clicked
+                    draggable: false, // Must click the "x" to dismiss
+                    theme: "dark",
+                    className: "border border-[#333] bg-[#161616] rounded-xl shadow-2xl", // Custom aesthetic
+                }
+            );
         });
 
         return () => socket.disconnect();
@@ -140,22 +208,7 @@ export default function Dashboard({ setIsAuth }) {
 
     const handleJoinRoom = async (e) => {
         e.preventDefault();
-        try {
-            const token = localStorage.getItem('token');
-            const response = await axios.post(`${baseUrl}/api/rooms/join`, {
-                roomId: joinRoomId
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            if (response.data.success) {
-                dispatch(setRoom(response.data.room));
-                toast.success("Joined room successfully!");
-                navigate(`/room/${response.data.room._id}`);
-            }
-        } catch (error) {
-            toast.error(error.response?.data?.message || "Room does not exist");
-        }
+        joinRoomByCode(joinRoomId);
     };
 
     const handleSearchUsers = async (e) => {

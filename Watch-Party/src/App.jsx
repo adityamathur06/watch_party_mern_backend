@@ -16,6 +16,14 @@ import Room from './components/Room';
 function App() {
   const dispatch = useDispatch();
   const [isAuth, setIsAuth] = useState(null);
+  
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteCode = urlParams.get('invite');
+    if (inviteCode) {
+      localStorage.setItem('pendingInvite', inviteCode);
+    }
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {

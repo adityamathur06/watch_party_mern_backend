@@ -96,7 +96,7 @@ exports.inviteFriends = async (req, res) => {
         const { roomId, offlineFriendIds, onlineFriendIds } = req.body;
         
         const host = await User.findById(req.user.id);
-        const joinLink = 'http://localhost:5173/dashboard';
+        const joinLink = `http://localhost:5173/dashboard?invite=${roomId}`;
 
         if (offlineFriendIds && offlineFriendIds.length > 0) {
             const offlineFriends = await User.find({ _id: { $in: offlineFriendIds } });
@@ -110,11 +110,6 @@ exports.inviteFriends = async (req, res) => {
                     html: htmlContent
                 });
             }));
-        }
-
-        if (onlineFriendIds && onlineFriendIds.length > 0) {
-            // TODO: Await instructions on how to handle live notifications!
-            console.log("These user IDs are online and waiting for a live invite:", onlineFriendIds);
         }
 
         res.status(200).json({ success: true, message: 'Invites routed successfully!' });

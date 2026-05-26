@@ -92,6 +92,15 @@ io.on('connection', (socket) => {
         }
         console.log(`Socket Disconnected: ${socket.id}`);
     });
+
+    socket.on('send_room_invite', (data) => {
+        const { receiverId, roomId, hostName } = data;
+        if (userSockets.has(receiverId)) {
+            userSockets.get(receiverId).forEach(socketId => {
+                io.to(socketId).emit('receive_room_invite', { roomId, hostName });
+            });
+        }
+    });
 });
 
 const PORT = process.env.PORT || 5000;

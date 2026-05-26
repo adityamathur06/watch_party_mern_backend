@@ -290,8 +290,10 @@ export default function Room() {
                     offlineFriendsToInvite.push(id);
                 }
             });
+            
+            const totalInvited = selectedFriends.length;
+            toast.success(totalInvited === 1 ? "Invitation sent!" : "Invitations sent!");
 
-            toast.info("Processing invites..."); 
             closeAddFriendModal(); 
 
             onlineFriendsToInvite.forEach(friendId => {
@@ -313,10 +315,6 @@ export default function Room() {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            if (response.data.success) {
-                const totalInvited = selectedFriends.length;
-                toast.success(totalInvited === 1 ? "Invitation sent!" : "Invitations sent!");
-            }
         } catch (error) {
             toast.error(error.response?.data?.message || "Failed to send invites");
         }

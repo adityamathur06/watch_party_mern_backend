@@ -1,11 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { setUser, logoutUser } from '../redux/userSlice';
+import { setUser, logoutUser, setOnlineUsers } from '../redux/userSlice';
 import { setRoom } from '../redux/roomSlice';
 import axios from 'axios';
 import { baseUrl } from '../utils/api';
+import { io } from 'socket.io-client';
 import { toast } from 'react-toastify';
+
+export const getAvatarGradient = (name) => {
+    if (!name) return 'from-[#ff5c00] to-[#ff8c42]';
+    const gradients = [
+        'from-[#ff5c00] to-[#ff8c42]', 'from-[#4facfe] to-[#00f2fe]', 
+        'from-[#43e97b] to-[#38f9d7]', 'from-[#fa709a] to-[#fee140]', 
+        'from-[#667eea] to-[#764ba2]', 'from-[#f83600] to-[#f9d423]', 
+        'from-[#16a085] to-[#f4d03f]', 'from-[#ff0844] to-[#ffb199]',
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return gradients[Math.abs(hash) % gradients.length];
+};
 
 export default function Dashboard({ setIsAuth }) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -13,6 +29,7 @@ export default function Dashboard({ setIsAuth }) {
     const [generatedRoomId, setGeneratedRoomId] = useState('');
     const [videoLink, setVideoLink] = useState('');
     const [joinRoomId, setJoinRoomId] = useState('');
+    
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -22,11 +39,13 @@ export default function Dashboard({ setIsAuth }) {
     const dispatch = useDispatch();
 
     const currentUser = useSelector((state) => state.user.currentUser);
+    const onlineUsers = useSelector((state) => state.user.onlineUsers);
+    
     const userName = currentUser ? currentUser.name : 'User';
     const friendsList = currentUser?.friends || [];
-
-    const formattedJoinDate = currentUser?.createdAt
-        ? new Date(currentUser.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    
+    const formattedJoinDate = currentUser?.createdAt 
+        ? new Date(currentUser.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
         : 'Recently';
 
     useEffect(() => {
@@ -38,6 +57,19 @@ export default function Dashboard({ setIsAuth }) {
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
+
+    useEffect(() => {
+        if (!currentUser) return;
+        
+        const socket = io(baseUrl);
+        socket.emit('register_user', currentUser._id);
+        
+        socket.on('online_users', (users) => {
+            dispatch(setOnlineUsers(users));
+        });
+
+        return () => socket.disconnect();
+    }, [currentUser, dispatch]);
 
     const generateId = () => {
         const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -56,7 +88,7 @@ export default function Dashboard({ setIsAuth }) {
         setIsDropdownOpen(false);
         setActiveModal('friends');
     };
-
+    
     const closeModal = () => {
         setActiveModal(null);
         setVideoLink('');
@@ -160,8 +192,8 @@ export default function Dashboard({ setIsAuth }) {
             });
 
             if (response.data.success) {
-                dispatch(setUser(response.data.user));
-                setSearchResults(prev => prev.filter(user => user._id !== friendId));
+                dispatch(setUser(response.data.user)); 
+                setSearchResults(prev => prev.filter(user => user._id !== friendId)); 
                 toast.success("Friend added successfully!");
                 setSearchQuery('');
             }
@@ -180,7 +212,7 @@ export default function Dashboard({ setIsAuth }) {
             });
 
             if (response.data.success) {
-                dispatch(setUser(response.data.user));
+                dispatch(setUser(response.data.user)); 
                 toast.success("Friend removed.");
             }
         } catch (error) {
@@ -197,15 +229,15 @@ export default function Dashboard({ setIsAuth }) {
         <>
             <header className="bg-[#0f0f0f]/90 backdrop-blur-sm h-16 px-8 flex items-center justify-between border-b border-[#222]">
                 <div className="text-xl font-semibold tracking-wide">Watch Party</div>
-
+                
                 <div className="relative" ref={dropdownRef}>
-                    <button
-                        className="bg-transparent border border-[#333] hover:border-accent/70 text-white px-4 py-2 rounded-full text-[0.9rem] cursor-pointer flex items-center gap-2 transition-all duration-300"
+                    <button 
+                        className="bg-transparent border border-[#333] hover:border-accent/70 text-white pl-2 pr-4 py-1.5 rounded-full text-[0.9rem] cursor-pointer flex items-center gap-2.5 transition-all duration-300" 
                         onClick={toggleDropdown}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-accent" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
+                        <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarGradient(userName)} flex items-center justify-center text-white font-bold text-[0.7rem] shrink-0`}>
+                            {userName.charAt(0).toUpperCase()}
+                        </div>
                         <span className="font-medium">Profile</span>
                         <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-textSecondary transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -213,16 +245,19 @@ export default function Dashboard({ setIsAuth }) {
                     </button>
 
                     {isDropdownOpen && (
-                        <div className="absolute right-0 top-[calc(100%+12px)] bg-[#111] border border-[#333] rounded-xl min-w-[220px] shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 overflow-hidden animate-popIn origin-top-right">
-                            <div className="p-4 border-b border-[#222] bg-[#161616]">
-                                <p className="font-bold text-white text-[1.05rem] truncate">{userName}</p>
-                                <p className="text-textSecondary text-[0.75rem] mt-1">
-                                    Joined {formattedJoinDate}
-                                </p>
+                        <div className="absolute right-0 top-[calc(100%+12px)] bg-[#111] border border-[#333] rounded-xl min-w-[240px] shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 overflow-hidden animate-popIn origin-top-right">
+                            <div className="p-4 border-b border-[#222] bg-[#161616] flex items-center gap-3">
+                                <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${getAvatarGradient(userName)} flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-inner`}>
+                                    {userName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex flex-col overflow-hidden">
+                                    <p className="font-bold text-white text-[1.05rem] truncate">{userName}</p>
+                                    <p className="text-textSecondary text-[0.7rem]">Joined {formattedJoinDate}</p>
+                                </div>
                             </div>
                             <div className="p-2 flex flex-col gap-1">
-                                <button
-                                    className="w-full bg-transparent border-none text-white flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg cursor-pointer text-[0.9rem] hover:bg-[#222] transition-colors"
+                                <button 
+                                    className="w-full bg-transparent border-none text-white flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg cursor-pointer text-[0.9rem] hover:bg-[#222] transition-colors" 
                                     onClick={openFriendsModal}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-textSecondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -230,8 +265,8 @@ export default function Dashboard({ setIsAuth }) {
                                     </svg>
                                     Friends
                                 </button>
-                                <button
-                                    className="w-full bg-transparent border-none text-[#ff4d4d] flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg cursor-pointer text-[0.9rem] hover:bg-[#ff4d4d]/10 transition-colors"
+                                <button 
+                                    className="w-full bg-transparent border-none text-[#ff4d4d] flex items-center gap-2.5 px-3 py-2.5 text-left rounded-lg cursor-pointer text-[0.9rem] hover:bg-[#ff4d4d]/10 transition-colors" 
                                     onClick={handleLogout}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -244,7 +279,7 @@ export default function Dashboard({ setIsAuth }) {
                     )}
                 </div>
             </header>
-
+            
             <main className="max-w-[900px] mx-auto px-8 py-12 flex flex-col items-center text-center">
                 <section className="flex flex-col items-center text-center">
                     <h1 className="text-5xl font-bold mb-2">Watch Party</h1>
@@ -269,29 +304,26 @@ export default function Dashboard({ setIsAuth }) {
                 </section>
             </main>
 
-            <div
-                className={`fixed inset-0 flex justify-center items-center z-[100] transition-all duration-300 ${activeModal ? 'bg-black/55 backdrop-blur-md opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            <div 
+                className={`fixed inset-0 flex justify-center items-center z-[100] transition-all duration-300 ${activeModal ? 'bg-black/55 backdrop-blur-md opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
                 onClick={closeModal}
             >
                 {activeModal === 'room-type' && (
                     <div className="bg-bgLight p-8 w-full max-w-[380px] rounded-[14px] shadow-[0_20px_40px_rgba(0,0,0,0.6)] relative animate-popIn" onClick={(e) => e.stopPropagation()}>
                         <button className="absolute top-3 right-3.5 text-2xl bg-transparent border-none text-textSecondary cursor-pointer hover:text-white" onClick={closeModal}>&times;</button>
                         <h2 className="mb-5 text-center text-2xl font-bold">Create a Room</h2>
-                        <input
-                            type="text"
-                            placeholder="Paste Video Link Here"
+                        <input 
+                            type="text" 
+                            placeholder="Paste Video Link Here" 
                             className={`${inputStyle} mb-6`}
                             value={videoLink}
                             onChange={(e) => setVideoLink(e.target.value)}
-                            required
+                            required 
                         />
                         <p className="mb-4 text-[#bbbbbb] text-[0.95rem] text-center">What kind of room do you want to create?</p>
-
+                        
                         <div className="flex gap-4 w-full">
-                            <button
-                                className={`${btnPrimary} flex-1 flex flex-col items-center justify-center gap-1.5 py-3.5 px-0`}
-                                onClick={handleSelectChatRoom}
-                            >
+                            <button className={`${btnPrimary} flex-1 flex flex-col items-center justify-center gap-1.5 py-3.5 px-0`} onClick={handleSelectChatRoom}>
                                 Chat Room
                             </button>
                             <button className={`${btnSecondary} flex-1 flex flex-col items-center justify-center gap-1.5 py-3.5 px-0 opacity-50 cursor-not-allowed`} disabled>
@@ -306,9 +338,7 @@ export default function Dashboard({ setIsAuth }) {
                     <div className="bg-bgLight p-8 w-full max-w-[380px] rounded-[14px] shadow-[0_20px_40px_rgba(0,0,0,0.6)] relative animate-popIn" onClick={(e) => e.stopPropagation()}>
                         <button className="absolute top-3 right-3.5 text-2xl bg-transparent border-none text-textSecondary cursor-pointer hover:text-white" onClick={closeModal}>&times;</button>
                         <h2 className="mb-5 text-center text-2xl font-bold">Your Room is Ready</h2>
-                        <p className="mb-4 text-[#bbbbbb] text-[0.95rem] text-center">
-                            Share this code with your friends
-                        </p>
+                        <p className="mb-4 text-[#bbbbbb] text-[0.95rem] text-center">Share this code with your friends</p>
 
                         <div className="flex items-center justify-between gap-3 px-3.5 py-3 my-6 bg-[#111] border border-white/15 rounded-lg">
                             <span className="text-lg tracking-[2px] font-semibold text-accent select-text">{generatedRoomId}</span>
@@ -324,15 +354,15 @@ export default function Dashboard({ setIsAuth }) {
                         <button className="absolute top-3 right-3.5 text-2xl bg-transparent border-none text-textSecondary cursor-pointer hover:text-white" onClick={closeModal}>&times;</button>
                         <h2 className="mb-5 text-center text-2xl font-bold">Join a Room</h2>
                         <p className="mb-4 text-[#bbbbbb] text-[0.95rem] text-center">Enter the room code shared by your friend</p>
-
+                        
                         <form className="flex flex-col gap-4" onSubmit={handleJoinRoom}>
-                            <input
-                                type="text"
-                                placeholder="Room Code (ABCD-1234)"
-                                className={`${inputStyle} uppercase`}
+                            <input 
+                                type="text" 
+                                placeholder="Room Code (ABCD-1234)" 
+                                className={`${inputStyle} uppercase`} 
                                 value={joinRoomId}
                                 onChange={(e) => setJoinRoomId(e.target.value.toUpperCase())}
-                                required
+                                required 
                             />
                             <button type="submit" className={btnPrimary}>Join Room</button>
                         </form>
@@ -345,18 +375,14 @@ export default function Dashboard({ setIsAuth }) {
                         <h2 className="mb-5 text-center text-2xl font-bold">Friends</h2>
 
                         <form className="flex gap-2 mb-6 shrink-0" onSubmit={handleSearchUsers}>
-                            <input
-                                type="text"
-                                placeholder="Search by name or email..."
+                            <input 
+                                type="text" 
+                                placeholder="Search by name or email..." 
                                 className="flex-1 px-3.5 py-2.5 rounded-lg border border-[#333] bg-[#111] text-white text-[0.9rem] focus:outline-none focus:border-accent"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
-                            <button
-                                type="submit"
-                                className="bg-accent text-white px-4 py-2.5 rounded-lg font-medium hover:bg-accentHover transition-colors disabled:opacity-50"
-                                disabled={isSearching}
-                            >
+                            <button type="submit" className="bg-accent text-white px-4 py-2.5 rounded-lg font-medium hover:bg-accentHover transition-colors disabled:opacity-50" disabled={isSearching}>
                                 {isSearching ? '...' : 'Search'}
                             </button>
                         </form>
@@ -369,11 +395,16 @@ export default function Dashboard({ setIsAuth }) {
                                         const isAlreadyFriend = friendsList.some(f => f._id === user._id);
                                         return (
                                             <div key={user._id} className="flex items-center justify-between bg-[#111] p-3 rounded-lg border border-[#222]">
-                                                <div className="flex flex-col overflow-hidden mr-2">
-                                                    <span className="font-semibold text-[0.95rem] truncate">{user.name}</span>
-                                                    <span className="text-[0.75rem] text-textSecondary truncate">{user.email}</span>
+                                                <div className="flex items-center gap-3 overflow-hidden mr-2">
+                                                    <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarGradient(user.name)} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+                                                        {user.name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div className="flex flex-col overflow-hidden">
+                                                        <span className="font-semibold text-[0.95rem] truncate">{user.name}</span>
+                                                        <span className="text-[0.75rem] text-textSecondary truncate">{user.email}</span>
+                                                    </div>
                                                 </div>
-                                                <button
+                                                <button 
                                                     onClick={() => handleAddFriend(user._id)}
                                                     disabled={isAlreadyFriend}
                                                     className={`px-3 py-1.5 rounded-md text-[0.8rem] font-medium transition-colors shrink-0 ${isAlreadyFriend ? 'bg-[#222] text-[#888] cursor-not-allowed' : 'bg-white/10 text-white hover:bg-white/20'}`}
@@ -391,28 +422,39 @@ export default function Dashboard({ setIsAuth }) {
                             <h3 className="text-[0.8rem] text-textSecondary uppercase tracking-widest mb-3 font-semibold shrink-0">Your Friends</h3>
                             <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
                                 {friendsList.length > 0 ? (
-                                    friendsList.map(friend => (
-                                        <div key={friend._id} className="flex items-center justify-between bg-[#111] p-3 rounded-lg border border-[#222] group hover:border-[#333] transition-colors">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent to-[#ff8c42] flex items-center justify-center text-white font-bold text-lg shrink-0">
-                                                    {friend.name.charAt(0).toUpperCase()}
+                                    friendsList.map(friend => {
+                                        const isOnline = onlineUsers.includes(friend._id);
+                                        return (
+                                            <div key={friend._id} className="flex items-center justify-between bg-[#111] p-3 rounded-lg border border-[#222] group hover:border-[#333] transition-colors">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className="relative shrink-0">
+                                                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarGradient(friend.name)} flex items-center justify-center text-white font-bold text-lg shadow-inner`}>
+                                                            {friend.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {isOnline && (
+                                                            <span className="absolute bottom-0 right-0 w-[12px] h-[12px] bg-[#43e97b] border-[2.5px] border-[#111] rounded-full z-10 shadow-[0_0_8px_rgba(67,233,123,0.6)]"></span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col overflow-hidden">
+                                                        <span className="font-semibold text-[0.95rem] truncate flex items-center gap-2">
+                                                            {friend.name}
+                                                            {isOnline && <span className="text-[0.65rem] text-[#43e97b] font-bold uppercase tracking-wider">Online</span>}
+                                                        </span>
+                                                        <span className="text-[0.75rem] text-textSecondary truncate">{friend.email}</span>
+                                                    </div>
                                                 </div>
-                                                <div className="flex flex-col overflow-hidden">
-                                                    <span className="font-semibold text-[0.95rem] truncate">{friend.name}</span>
-                                                    <span className="text-[0.75rem] text-textSecondary truncate">{friend.email}</span>
-                                                </div>
+                                                <button 
+                                                    onClick={() => handleRemoveFriend(friend._id)}
+                                                    className="text-[#444] hover:text-[#ff4d4d] transition-colors p-2 bg-transparent border-none cursor-pointer flex-shrink-0"
+                                                    title="Remove Friend"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
                                             </div>
-                                            <button
-                                                onClick={() => handleRemoveFriend(friend._id)}
-                                                className="text-[#444] hover:text-[#ff4d4d] transition-colors p-2 bg-transparent border-none cursor-pointer flex-shrink-0"
-                                                title="Remove Friend"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 ) : (
                                     <div className="flex flex-col items-center justify-center py-8 text-center bg-[#111] rounded-lg border border-[#222] border-dashed">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-[#444] mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">

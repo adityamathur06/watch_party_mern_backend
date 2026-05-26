@@ -1,5 +1,8 @@
 const Room = require('../models/Room');
 const Chat = require('../models/Chat');
+const User = require('../models/User');
+const sendEmail = require('../utils/sendEmail');
+const { roomInviteTemplate } = require('../templates/emailTemplates');
 
 exports.createRoom = async (req, res) => {
     try {
@@ -85,5 +88,38 @@ exports.leaveRoom = async (req, res) => {
         }
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.inviteFriends = async (req, res) => {
+    try {
+        const { roomId, offlineFriendIds, onlineFriendIds } = req.body;
+        
+        const host = await User.findById(req.user.id);
+        const joinLink = 'http://localhost:5173/dashboard';
+
+        if (offlineFriendIds && offlineFriendIds.length > 0) {
+            const offlineFriends = await User.find({ _id: { $in: offlineFriendIds } });
+
+            await Promise.all(offlineFriends.map(async (friend) => {
+                const htmlContent = roomInviteTemplate(host.name, roomId, joinLink);
+                
+                await sendEmail({
+                    email: friend.email,
+                    subject: `${host.name} invited you to a Watch Party! 🍿`,
+                    html: htmlContent
+                });
+            }));
+        }
+
+        if (onlineFriendIds && onlineFriendIds.length > 0) {
+            // TODO: Await instructions on how to handle live notifications!
+            console.log("These user IDs are online and waiting for a live invite:", onlineFriendIds);
+        }
+
+        res.status(200).json({ success: true, message: 'Invites routed successfully!' });
+    } catch (error) {
+        console.error("Invite Routing Error:", error);
+        res.status(500).json({ success: false, message: 'Failed to route invites.' });
     }
 };

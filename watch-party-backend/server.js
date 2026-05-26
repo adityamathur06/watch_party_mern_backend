@@ -8,7 +8,7 @@ const { Server } = require('socket.io');
 const authRoutes = require('./routes/authRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const chatRoutes = require('./routes/chatRoutes');
-const userRoutes = require('./routes/userRoutes'); 
+const userRoutes = require('./routes/userRoutes');
 
 dotenv.config();
 
@@ -28,14 +28,26 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/chats', chatRoutes);
-app.use('/api/users', userRoutes); 
+app.use('/api/users', userRoutes);
 
 mongoose.connect(process.env.MONGO_URI, { family: 4 })
     .then(() => console.log('Connected to MongoDB'))
     .catch((err) => console.log(err));
 
+const userSockets = new Map(); 
+
 io.on('connection', (socket) => {
-    console.log(`User Connected: ${socket.id}`);
+    console.log(`Socket Connected: ${socket.id}`);
+
+    socket.on('register_user', (userId) => {
+        socket.userId = userId;
+        
+        if (!userSockets.has(userId)) {
+            userSockets.set(userId, new Set());
+        }
+        userSockets.get(userId).add(socket.id);
+        io.emit('online_users', Array.from(userSockets.keys()));
+    });
 
     socket.on('join_room', (roomId) => {
         socket.join(roomId);
@@ -70,7 +82,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log(`User Disconnected: ${socket.id}`);
+        if (socket.userId && userSockets.has(socket.userId)) {
+            const sockets = userSockets.get(socket.userId);
+            sockets.delete(socket.id);
+            if (sockets.size === 0) {
+                userSockets.delete(socket.userId);
+            }
+            io.emit('online_users', Array.from(userSockets.keys()));
+        }
+        console.log(`Socket Disconnected: ${socket.id}`);
     });
 });
 

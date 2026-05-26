@@ -3,10 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { setRoom, clearRoom, addMember, removeMember } from '../redux/roomSlice';
 import { setMessages, addMessage, clearMessages } from '../redux/chatSlice';
+import { setOnlineUsers } from '../redux/userSlice'; // ADDED setOnlineUsers
 import axios from 'axios';
 import { baseUrl } from '../utils/api';
 import { io } from 'socket.io-client';
 import { toast } from 'react-toastify';
+import { getAvatarGradient } from './Dashboard';
 
 export default function Room() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -29,14 +31,15 @@ export default function Room() {
     const videoRef = useRef(null);
 
     const currentUser = useSelector((state) => state.user.currentUser);
+    const onlineUsers = useSelector((state) => state.user.onlineUsers); // PULLING ONLINE ARRAY
     const currentRoom = useSelector((state) => state.room.currentRoom);
     const messages = useSelector((state) => state.chat.messages);
 
     const isHost = currentRoom && currentUser ? String(currentRoom.host._id) === String(currentUser._id) : false;
 
     const friendsList = currentUser?.friends || [];
-    const filteredFriends = friendsList.filter(friend => 
-        friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) || 
+    const filteredFriends = friendsList.filter(friend =>
+        friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
         friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase())
     );
 
@@ -79,8 +82,14 @@ export default function Room() {
                     }
 
                     socketRef.current = io(baseUrl);
-                    socketRef.current.emit('join_room', roomData.roomId);
 
+                    // --- NEW GLOBAL PRESENCE HOOKS ---
+                    socketRef.current.emit('register_user', currentUser._id);
+                    socketRef.current.on('online_users', (users) => {
+                        dispatch(setOnlineUsers(users));
+                    });
+
+                    socketRef.current.emit('join_room', roomData.roomId);
                     socketRef.current.emit('user_joined', {
                         roomId: roomData.roomId,
                         user: currentUser
@@ -233,7 +242,7 @@ export default function Room() {
         const newTime = parseFloat(e.target.value);
         videoRef.current.currentTime = newTime;
         setCurrentTime(newTime);
-        
+
         socketRef.current.emit('video_seek', {
             roomId: currentRoom.roomId,
             time: newTime
@@ -262,17 +271,45 @@ export default function Room() {
     };
 
     const toggleFriendSelection = (friendId) => {
-        setSelectedFriends(prev => 
-            prev.includes(friendId) 
-                ? prev.filter(id => id !== friendId) 
+        setSelectedFriends(prev =>
+            prev.includes(friendId)
+                ? prev.filter(id => id !== friendId)
                 : [...prev, friendId]
         );
     };
 
-    const confirmAddFriends = () => {
-        console.log("Selected friends to invite:", selectedFriends);
-        toast.success("Invitation Sent!");
-        closeAddFriendModal();
+    const confirmAddFriends = async () => {
+        try {
+            const onlineFriendsToInvite = [];
+            const offlineFriendsToInvite = [];
+
+            selectedFriends.forEach(id => {
+                if (onlineUsers.includes(id)) {
+                    onlineFriendsToInvite.push(id);
+                } else {
+                    offlineFriendsToInvite.push(id);
+                }
+            });
+
+            toast.info("Processing invites..."); 
+            closeAddFriendModal(); 
+
+            const token = localStorage.getItem('token');
+            const response = await axios.post(`${baseUrl}/api/rooms/invite`, {
+                roomId: currentRoom.roomId,
+                offlineFriendIds: offlineFriendsToInvite,
+                onlineFriendIds: onlineFriendsToInvite
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.data.success) {
+                const totalInvited = selectedFriends.length;
+                toast.success(totalInvited === 1 ? "Invitation sent!" : "Invitations sent!");
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to send invites");
+        }
     };
 
     if (isLoading || !currentUser || !currentRoom) {
@@ -302,20 +339,34 @@ export default function Room() {
                     <aside className={`bg-black/40 border-r border-white/10 flex flex-col h-full min-h-0 transition-opacity duration-200 ease-in-out ${!isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                         <div className="p-4 flex-1 overflow-y-auto">
                             <h2 className="text-[1.2rem] mb-4 font-bold">Members</h2>
-                            <ul className="list-none p-0 mt-4">
-                                <li className="font-bold mb-2 text-accent">
-                                    {currentRoom.host.name} (Host)
+                            <ul className="list-none p-0 mt-4 flex flex-col gap-3">
+                                {/* Host Member - Always online technically since they are in the room */}
+                                <li className="flex items-center gap-3">
+                                    <div className="relative shrink-0">
+                                        <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarGradient(currentRoom.host.name)} flex items-center justify-center text-white font-bold text-xs ring-2 ring-accent/30`}>
+                                            {currentRoom.host.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <span className="absolute bottom-[-1px] right-[-1px] w-[9px] h-[9px] bg-[#43e97b] border-[1.5px] border-[#111] rounded-full z-10 shadow-[0_0_5px_rgba(67,233,123,0.6)]"></span>
+                                    </div>
+                                    <span className="font-bold text-accent text-[0.9rem] truncate">{currentRoom.host.name} (Host)</span>
                                 </li>
+                                {/* Regular Members */}
                                 {currentRoom.members.map((member) => (
-                                    <li key={member._id} className="py-1.5 text-[0.85rem] opacity-85 mb-2">
-                                        {member.name}
+                                    <li key={member._id} className="flex items-center gap-3 opacity-90">
+                                        <div className="relative shrink-0">
+                                            <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarGradient(member.name)} flex items-center justify-center text-white font-bold text-xs`}>
+                                                {member.name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <span className="absolute bottom-[-1px] right-[-1px] w-[9px] h-[9px] bg-[#43e97b] border-[1.5px] border-[#111] rounded-full z-10 shadow-[0_0_5px_rgba(67,233,123,0.6)]"></span>
+                                        </div>
+                                        <span className="text-[0.9rem] truncate">{member.name}</span>
                                     </li>
                                 ))}
                             </ul>
                         </div>
                         <div className="p-4 border-t border-white/10 shrink-0 bg-black/20">
-                            <button 
-                                onClick={openAddFriendModal} 
+                            <button
+                                onClick={openAddFriendModal}
                                 className="w-full flex items-center justify-center gap-2.5 bg-white/10 hover:bg-white/20 text-white px-4 py-2.5 rounded-lg transition-colors text-[0.9rem] font-medium cursor-pointer border border-white/10"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -342,7 +393,7 @@ export default function Room() {
                         >
                             Your browser does not support the video tag.
                         </video>
-                        
+
                         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[80%] max-w-[900px] z-10 bg-black/60 backdrop-blur-md px-5 py-3.5 rounded-xl border border-white/10 flex items-center gap-4 shadow-2xl transition-opacity duration-300 opacity-0 group-hover:opacity-100">
                             {isHost && (
                                 <button onClick={togglePlay} className="text-white hover:text-accent transition-colors outline-none flex-shrink-0">
@@ -357,21 +408,21 @@ export default function Room() {
                                     )}
                                 </button>
                             )}
-                            
+
                             <div className="text-white/80 text-[0.8rem] font-semibold tracking-wider w-[45px] text-right flex-shrink-0">
                                 {formatTime(currentTime)}
                             </div>
 
                             <div className="relative flex-1 h-1.5 bg-white/20 rounded-full flex items-center">
-                                <div 
+                                <div
                                     className="absolute left-0 top-0 h-full bg-accent rounded-full pointer-events-none transition-all duration-75 ease-linear"
                                     style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
                                 />
                                 {isHost && (
-                                    <input 
-                                        type="range" 
-                                        min="0" 
-                                        max={duration || 0} 
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max={duration || 0}
                                         step="0.1"
                                         value={currentTime}
                                         onChange={handleSeekInput}
@@ -393,12 +444,17 @@ export default function Room() {
                                 const isSenderHost = String(msg.sender._id) === String(currentRoom.host._id);
 
                                 return (
-                                    <div key={msg._id} className={`flex flex-col max-w-[75%] ${isOwnMessage ? 'self-end items-end' : 'self-start items-start'}`}>
-                                        <span className={`text-[0.7rem] font-semibold opacity-75 mb-1 ${isOwnMessage ? 'text-right' : 'text-left'}`}>
-                                            {isOwnMessage ? 'You' : `${msg.sender.name} ${isSenderHost ? '(Host)' : ''}`}
-                                        </span>
-                                        <div className={`px-3.5 py-2 text-[0.85rem] leading-snug shadow-sm ${isOwnMessage ? 'bg-accent text-black rounded-xl rounded-tr-sm' : 'bg-[#222] text-white rounded-xl rounded-tl-sm'}`}>
-                                            {msg.message}
+                                    <div key={msg._id} className={`flex w-full gap-2.5 ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarGradient(msg.sender.name)} flex items-center justify-center text-white font-bold text-[0.7rem] shrink-0 mt-[18px] shadow-sm`}>
+                                            {msg.sender.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className={`flex flex-col max-w-[75%] ${isOwnMessage ? 'items-end' : 'items-start'}`}>
+                                            <span className={`text-[0.65rem] font-semibold opacity-60 mb-1 px-1 ${isOwnMessage ? 'text-right' : 'text-left'}`}>
+                                                {isOwnMessage ? 'You' : `${msg.sender.name} ${isSenderHost ? '(Host)' : ''}`}
+                                            </span>
+                                            <div className={`px-3.5 py-2 text-[0.85rem] leading-snug shadow-sm ${isOwnMessage ? 'bg-accent text-black rounded-xl rounded-tr-sm' : 'bg-[#2a2a2a] text-white rounded-xl rounded-tl-sm border border-white/5'}`}>
+                                                {msg.message}
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -423,8 +479,8 @@ export default function Room() {
             </div>
 
             {/* Add Friends Modal */}
-            <div 
-                className={`fixed inset-0 flex justify-center items-center z-[100] transition-all duration-300 ${isAddFriendModalOpen ? 'bg-black/55 backdrop-blur-md opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
+            <div
+                className={`fixed inset-0 flex justify-center items-center z-[100] transition-all duration-300 ${isAddFriendModalOpen ? 'bg-black/55 backdrop-blur-md opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                 onClick={closeAddFriendModal}
             >
                 <div className="bg-[#111] p-8 w-full max-w-[420px] rounded-[14px] shadow-[0_20px_40px_rgba(0,0,0,0.8)] relative animate-popIn max-h-[85vh] flex flex-col border border-white/10" onClick={(e) => e.stopPropagation()}>
@@ -442,9 +498,9 @@ export default function Room() {
                     ) : (
                         <>
                             <div className="mb-4 shrink-0 relative">
-                                <input 
-                                    type="text" 
-                                    placeholder="Search your friends..." 
+                                <input
+                                    type="text"
+                                    placeholder="Search your friends..."
                                     className="w-full pl-10 pr-4 py-3 rounded-lg border border-[#333] bg-[#161616] text-white text-[0.95rem] focus:outline-none focus:border-accent transition-colors"
                                     value={friendSearchQuery}
                                     onChange={(e) => setFriendSearchQuery(e.target.value)}
@@ -462,29 +518,40 @@ export default function Room() {
                                         const isSelected = selectedFriends.includes(friend._id);
                                         const isAlreadyInRoom = usersInRoom.includes(String(friend._id));
 
+                                        // --- CHECKING ONLINE STATUS HERE ---
+                                        const isOnline = onlineUsers.includes(friend._id);
+
                                         return (
-                                            <div 
-                                                key={friend._id} 
+                                            <div
+                                                key={friend._id}
                                                 onClick={() => {
                                                     if (!isAlreadyInRoom) toggleFriendSelection(friend._id);
                                                 }}
-                                                className={`flex items-center justify-between p-3 rounded-xl border transition-all duration-200 select-none ${
-                                                    isAlreadyInRoom
+                                                className={`flex items-center justify-between p-3 rounded-xl border transition-all duration-200 select-none ${isAlreadyInRoom
                                                         ? 'bg-[#111] border-[#222] opacity-50 cursor-not-allowed'
-                                                        : isSelected 
-                                                            ? 'cursor-pointer bg-accent/15 border-accent shadow-[0_0_15px_rgba(255,92,0,0.15)]' 
+                                                        : isSelected
+                                                            ? 'cursor-pointer bg-accent/15 border-accent shadow-[0_0_15px_rgba(255,92,0,0.15)]'
                                                             : 'cursor-pointer bg-[#161616] border-[#333] hover:border-[#555]'
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-3 overflow-hidden">
-                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0 border ${isAlreadyInRoom ? 'bg-[#222] border-[#333] text-[#666]' : 'bg-gradient-to-br from-[#333] to-[#111] border-[#444]'}`}>
-                                                        {friend.name.charAt(0).toUpperCase()}
+                                                    <div className="relative shrink-0">
+                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg border ${isAlreadyInRoom ? 'bg-[#222] border-[#333] text-[#666]' : `bg-gradient-to-br ${getAvatarGradient(friend.name)} border-white/10`}`}>
+                                                            {friend.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {isOnline && !isAlreadyInRoom && (
+                                                            <span className="absolute bottom-0 right-0 w-[12px] h-[12px] bg-[#43e97b] border-[2.5px] border-[#111] rounded-full z-10 shadow-[0_0_8px_rgba(67,233,123,0.6)]"></span>
+                                                        )}
                                                     </div>
                                                     <div className="flex flex-col overflow-hidden">
-                                                        <span className={`font-semibold text-[0.95rem] truncate ${isAlreadyInRoom ? 'text-[#666]' : 'text-white'}`}>{friend.name}</span>
+                                                        <span className={`font-semibold text-[0.95rem] truncate flex items-center gap-2 ${isAlreadyInRoom ? 'text-[#666]' : 'text-white'}`}>
+                                                            {friend.name}
+                                                            {isOnline && !isAlreadyInRoom && <span className="text-[0.65rem] text-[#43e97b] font-bold uppercase tracking-wider">Online</span>}
+                                                        </span>
                                                         <span className="text-[0.75rem] text-textSecondary truncate">{friend.email}</span>
                                                     </div>
                                                 </div>
+
                                                 {isAlreadyInRoom ? (
                                                     <span className="text-[0.75rem] font-medium text-[#666] tracking-wide px-2 shrink-0">In Room</span>
                                                 ) : (
@@ -504,7 +571,7 @@ export default function Room() {
                         </>
                     )}
 
-                    <button 
+                    <button
                         onClick={confirmAddFriends}
                         disabled={friendsList.length === 0 || selectedFriends.length === 0}
                         className={`mt-6 w-full py-3.5 rounded-lg font-bold text-[1rem] transition-all duration-200 ${friendsList.length === 0 || selectedFriends.length === 0 ? 'bg-[#333] text-[#666] cursor-not-allowed' : 'bg-accent text-white hover:bg-accentHover shadow-[0_0_20px_rgba(255,92,0,0.3)]'}`}

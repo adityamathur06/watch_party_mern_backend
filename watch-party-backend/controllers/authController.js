@@ -1,14 +1,57 @@
 const User = require('../models/User');
+const OTP = require('../models/OTP');
+const sendEmail = require('../utils/sendEmail');
+const { otpTemplate } = require('../templates/otpTemplate');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+exports.sendOtp = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ success: false, message: 'User with this email already exists' });
+        }
+
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        await OTP.findOneAndUpdate(
+            { email }, 
+            { otp: otpCode, createdAt: Date.now() }, 
+            { upsert: true, new: true }
+        );
+
+        await sendEmail({
+            email: email,
+            subject: 'Watch Party - Your Verification Code',
+            html: otpTemplate(otpCode)
+        });
+
+        res.status(200).json({ success: true, message: 'Verification code sent!' });
+    } catch (error) {
+        console.error("OTP Error:", error);
+        res.status(500).json({ success: false, message: 'Failed to send verification code' });
+    }
+};
+
 exports.signup = async (req, res) => {
     try {
-        const { name, email, password } = req.body;
+        const { name, email, password, otp } = req.body;
+
+        if (!name || !email || !password || !otp) {
+            return res.status(400).json({ message: "All fields including OTP are required" });
+        }
+
+        // 1. Verify the OTP
+        const validOtpRecord = await OTP.findOne({ email, otp });
+        if (!validOtpRecord) {
+            return res.status(400).json({ message: "Invalid or expired verification code" });
+        }
         
-        const existingUser = await User.findOne({email});
-        if(existingUser) {
-            return res.status(400).json({message : "User already exists"});
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: "User already exists" });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -21,9 +64,13 @@ exports.signup = async (req, res) => {
         });
 
         await newUser.save();
-        res.status(201).json({ success: true, message : "User created successfully"});
+
+        // 2. Clear the OTP from the database
+        await OTP.deleteOne({ email });
+
+        res.status(201).json({ success: true, message: "User created successfully" });
     } catch (e) {
-        res.status(500).json({message : `Server error : ${e}`});
+        res.status(500).json({ message: `Server error : ${e}` });
     }
 };
 

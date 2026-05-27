@@ -2,7 +2,8 @@ const Room = require('../models/Room');
 const Chat = require('../models/Chat');
 const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
-const { roomInviteTemplate } = require('../templates/emailTemplates');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 exports.createRoom = async (req, res) => {
     try {
@@ -102,13 +103,17 @@ exports.inviteFriends = async (req, res) => {
             const offlineFriends = await User.find({ _id: { $in: offlineFriendIds } });
 
             await Promise.all(offlineFriends.map(async (friend) => {
-                const htmlContent = roomInviteTemplate(host.name, roomId, joinLink);
                 
+                // THE NEW EMAILJS CALL FOR INVITES
                 await sendEmail({
-                    email: friend.email,
-                    subject: `${host.name} invited you to a Watch Party! 🍿`,
-                    html: htmlContent
+                    templateId: process.env.EMAILJS_INVITE_TEMPLATE_ID,
+                    templateParams: {
+                        to_email: friend.email,
+                        host_name: host.name,
+                        room_link: joinLink
+                    }
                 });
+
             }));
         }
 

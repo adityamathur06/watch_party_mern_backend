@@ -1,27 +1,20 @@
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 const sendEmail = async (options) => {
-    const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
-        },
-        tls: {
-            rejectUnauthorized: false
-        }
-    });
-
-    const mailOptions = {
-        from: `Watch Party <${process.env.EMAIL_USER}>`,
-        to: options.email,
-        subject: options.subject,
-        html: options.html,
-    };
-
-    await transporter.sendMail(mailOptions);
+    try {
+        const response = await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
+            service_id: process.env.EMAILJS_SERVICE_ID,
+            template_id: options.templateId, // We will pass this from the controller
+            user_id: process.env.EMAILJS_PUBLIC_KEY,
+            accessToken: process.env.EMAILJS_PRIVATE_KEY,
+            template_params: options.templateParams // Variables like email and OTP
+        });
+        
+        return response.data;
+    } catch (error) {
+        console.error("EmailJS Error:", error.response?.data || error.message);
+        throw new Error("Failed to send email via EmailJS");
+    }
 };
 
 module.exports = sendEmail;

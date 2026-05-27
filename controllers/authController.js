@@ -1,7 +1,6 @@
 const User = require('../models/User');
 const OTP = require('../models/OTP');
 const sendEmail = require('../utils/sendEmail');
-const { otpTemplate } = require('../templates/otpTemplate');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -17,15 +16,17 @@ exports.sendOtp = async (req, res) => {
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
         await OTP.findOneAndUpdate(
-            { email }, 
-            { otp: otpCode, createdAt: Date.now() }, 
+            { email },
+            { otp: otpCode, createdAt: Date.now() },
             { upsert: true, new: true }
         );
 
         await sendEmail({
-            email: email,
-            subject: 'Watch Party - Your Verification Code',
-            html: otpTemplate(otpCode)
+            templateId: process.env.EMAILJS_OTP_TEMPLATE_ID,
+            templateParams: {
+                to_email: email, // This must match the variable {{to_email}} in your EmailJS template
+                otp: otpCode     // This must match the variable {{otp}} in your EmailJS template
+            }
         });
 
         res.status(200).json({ success: true, message: 'Verification code sent!' });
@@ -48,7 +49,7 @@ exports.signup = async (req, res) => {
         if (!validOtpRecord) {
             return res.status(400).json({ message: "Invalid or expired verification code" });
         }
-        
+
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ message: "User already exists" });
@@ -77,16 +78,16 @@ exports.signup = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        const user = await User.findOne({email}).populate('friends', 'name email');
+        const user = await User.findOne({ email }).populate('friends', 'name email');
 
-        if(!user) {
-            return res.status(400).json({message : 'Invalid email or password'});
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid email or password' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
 
-        if(!isMatch) {
-            return res.status(400).json({message : 'Invalid email or password'});
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid email or password' });
         }
 
         const token = jwt.sign(
@@ -96,7 +97,7 @@ exports.login = async (req, res) => {
         );
 
         res.status(200).json({
-            success: true, 
+            success: true,
             message: 'Login successful',
             token,
             user: {
@@ -108,24 +109,24 @@ exports.login = async (req, res) => {
             }
         })
     } catch (e) {
-        res.status(500).json({message : `Server error : ${e}`});
+        res.status(500).json({ message: `Server error : ${e}` });
     }
 };
 
 exports.getUser = async (req, res) => {
     try {
-        const userId = req.user.userId || req.user._id || req.user.id || req.user; 
-        
+        const userId = req.user.userId || req.user._id || req.user.id || req.user;
+
         const user = await User.findById(userId)
             .populate('friends', 'name email')
             .select('-password');
-            
+
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
         res.status(200).json({ success: true, user });
     } catch (e) {
-        res.status(500).json({ success: false, message : `Server error : ${e}`});
+        res.status(500).json({ success: false, message: `Server error : ${e}` });
     }
 };

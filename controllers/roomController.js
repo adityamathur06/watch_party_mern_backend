@@ -96,7 +96,7 @@ exports.inviteFriends = async (req, res) => {
         const { roomId, offlineFriendIds, onlineFriendIds } = req.body;
         
         const host = await User.findById(req.user.id);
-        const joinLink = `http://localhost:5173/dashboard?invite=${roomId}`;
+        const joinLink = `${process.env.FRONTEND_URL}/dashboard?invite=${roomId}`;
 
         if (offlineFriendIds && offlineFriendIds.length > 0) {
             const offlineFriends = await User.find({ _id: { $in: offlineFriendIds } });

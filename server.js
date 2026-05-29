@@ -37,14 +37,14 @@ mongoose.connect(process.env.MONGO_URI, { family: 4 })
     .then(() => console.log('Connected to MongoDB'))
     .catch((err) => console.log(err));
 
-const userSockets = new Map(); 
+const userSockets = new Map();
 
 io.on('connection', (socket) => {
     console.log(`Socket Connected: ${socket.id}`);
 
     socket.on('register_user', (userId) => {
         socket.userId = userId;
-        
+
         if (!userSockets.has(userId)) {
             userSockets.set(userId, new Set());
         }
@@ -72,16 +72,18 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('room_ended');
     });
 
-    socket.on('video_play', (roomId) => {
-        socket.to(roomId).emit('video_play');
-    });
+    socket.on('video_change', async (data) => {
+        socket.to(data.roomId).emit('video_change', data.link);
 
-    socket.on('video_pause', (roomId) => {
-        socket.to(roomId).emit('video_pause');
-    });
-
-    socket.on('video_seek', (data) => {
-        socket.to(data.roomId).emit('video_seek', data.time);
+        try {
+            const Room = mongoose.model('Room');
+            await Room.updateOne(
+                { roomId: data.roomId },
+                { $set: { link: data.link } }
+            );
+        } catch (err) { 
+            console.error("Failed to save link to DB:", err); 
+        }
     });
 
     socket.on('disconnect', () => {
